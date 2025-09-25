@@ -1,55 +1,62 @@
-import express from "express";
-import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+const BRAZE_API_KEY = process.env.BRAZE_API_KEY;
+const BRAZE_REST_ENDPOINT = process.env.BRAZE_REST_ENDPOINT; // ej: https://rest.iad-01.braze.com
+const CATALOG_NAME = process.env.CATALOG_NAME || 'Catalogo_AppSync'; // tu nuevo catálogo
+const SHARED_SECRET = process.env.SHARED_SECRET;
+
+// Función para dividir en lotes de máximo 50 items
+function chunkArray(arr, size){
+  const out = [];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
+
+app.post('/sync-catalog', async (req, res) => {
+  try {
+    // Seguridad
+    const secret = req.headers['x-shared-secret'];
+    if (!SHARED_SECRET || secret !== SHARED_SECRET) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+
+    const items = req.body.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'no items provided' });
+    }
+
+    // Transformar items: solo id + content-name
+    const cleanItems = items.map(i => ({
+      external_id: i.external_id,
+      attributes: {
+        "content-name": i.attributes["content-name"] || ""
+      }
+    }));
+
+    const batches = chunkArray(cleanItems, 50);
+
+    for (const batch of batches) {
+      const url = `${BRAZE_REST_ENDPOINT.replace(/\/$/, '')}/catalogs/${encodeURIComponent(CATALOG_NAME)}/items`;
+      const resp = await axios.put(url, { items: batch }, {
+        headers: {
+          'Authorization': `Bearer ${BRAZE_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('Braze response', resp.status);
+    }
+
+    return res.json({ message: 'ok', batches: batches.length });
+  } catch (err) {
+    console.error('sync error', err.response ? err.response.data : err.message);
+    return res.status(500).json({ error: 'sync_failed' });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
-const BRAZE_API_KEY = process.env.BRAZE_API_KEY; // tu API key de Braze
-const BRAZE_CATALOG_ID = process.env.BRAZE_CATALOG_ID; // tu catalog ID
-
-app.post("/sync-catalog", async (req, res) => {
-  const { items } = req.body;
-
-  if (!items || !Array.isArray(items)) {
-    return res.status(400).json({ error: "items inválidos" });
-  }
-
-  const results = [];
-
-  for (const item of items) {
-    try {
-      const payload = {
-        external_id: item.external_id,
-        attributes: {
-          "content-name": item.attributes["content-name"] || ""
-        }
-      };
-
-      // Llamada a Braze para upsert en el catálogo
-      const response = await axios.post(
-        `https://rest.iad-01.braze.com/catalogs/${BRAZE_CATALOG_ID}/upsert_items`,
-        { items: [payload] },
-        {
-          headers: {
-            "Authorization": `Bearer ${BRAZE_API_KEY}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
-
-      results.push({ external_id: item.external_id, status: "ok", response: response.data });
-    } catch (err) {
-      results.push({ external_id: item.external_id, status: "error", error: err.response?.data || err.message });
-    }
-  }
-
-  res.json({ message: "Sync completed", results });
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, ()=> console.log(`Servidor corriendo en puerto ${PORT}`));
