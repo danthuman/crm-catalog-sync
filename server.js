@@ -1,9 +1,12 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const app = express();
+// server.js - ES Module
+import express from 'express';
+import axios from 'axios';
+import dotenv from 'dotenv';
 
-app.use(express.json({ limit: '10mb' })); // aumentar límite si hay muchas filas
+dotenv.config();
+
+const app = express();
+app.use(express.json({ limit: '10mb' })); // Aumenta límite si hay muchas filas
 
 // Configuración
 const PORT = process.env.PORT || 3000;
@@ -11,7 +14,7 @@ const BRAZE_API_URL = process.env.BRAZE_API_URL; // URL de tu catalog API en Bra
 const BRAZE_API_KEY = process.env.BRAZE_API_KEY; // API key de Braze
 const SHARED_SECRET = process.env.SHARED_SECRET; // secreto que usas en Apps Script
 
-// Lista de campos válidos en tu catálogo Braze
+// Campos válidos de tu catálogo Braze
 const CATALOG_FIELDS = [
   "content-name", "copy", "cta", "v-category",
   "c-category-1", "c-category-2", "c-category-3", "c-category-4",
@@ -21,7 +24,7 @@ const CATALOG_FIELDS = [
 // Endpoint para recibir items desde Google Apps Script
 app.post('/sync-catalog', async (req, res) => {
   try {
-    // Verificar el shared secret
+    // Verificar shared secret
     const secret = req.headers['x-shared-secret'];
     if (secret !== SHARED_SECRET) {
       return res.status(403).json({ error: 'Invalid shared secret' });
@@ -32,13 +35,12 @@ app.post('/sync-catalog', async (req, res) => {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    // Preparar payload para Braze: upsert fila por fila
     const results = [];
 
     for (const item of itemsFromSheets) {
-      if (!item.external_id) continue; // ignorar filas sin external_id
+      if (!item.external_id) continue; // Ignorar filas sin external_id
 
-      // Filtrar atributos: solo enviar los que existen en el catálogo
+      // Filtrar atributos válidos del catálogo
       const attributes = {};
       if (item.attributes && typeof item.attributes === 'object') {
         for (const key of Object.keys(item.attributes)) {
@@ -48,6 +50,7 @@ app.post('/sync-catalog', async (req, res) => {
         }
       }
 
+      // Payload para Braze
       const brazePayload = {
         items: [
           {
@@ -69,7 +72,7 @@ app.post('/sync-catalog', async (req, res) => {
         results.push({ external_id: item.external_id, status: 'error', error: err.response ? err.response.data : err.message });
       }
 
-      // Delay opcional para no saturar Braze
+      // Delay para no saturar Braze
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
