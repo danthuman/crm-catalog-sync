@@ -8,9 +8,9 @@ app.use(express.json({ limit: '10mb' }));
 const BRAZE_API_KEY = process.env.BRAZE_API_KEY;
 const BRAZE_REST_ENDPOINT = process.env.BRAZE_REST_ENDPOINT; // ej: https://rest.iad-05.braze.com
 const CATALOG_NAME = process.env.CATALOG_NAME; // ej: Catalogo_AppSync
-const SHARED_SECRET = process.env.SHARED_SECRET;
+const SHARED_SECRET = process.env.SHARED_SECRET; // secreto entre Sheets y Render
 
-// Divide en lotes de máximo 50 items
+// Función para dividir en lotes (opcional)
 function chunkArray(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -19,7 +19,7 @@ function chunkArray(arr, size) {
 
 app.post('/sync-catalog', async (req, res) => {
   try {
-    // Seguridad
+    // Validación de seguridad
     const secret = req.headers['x-shared-secret'];
     if (!SHARED_SECRET || secret !== SHARED_SECRET) {
       return res.status(401).json({ error: 'unauthorized' });
@@ -33,17 +33,19 @@ app.post('/sync-catalog', async (req, res) => {
     const batches = chunkArray(items, 50);
 
     for (const batch of batches) {
-      const url = `${BRAZE_REST_ENDPOINT.replace(/\/$/, '')}/catalogs/${encodeURIComponent(CATALOG_NAME)}/items`;
+      // Log para depuración
+      console.log("Enviando batch a Braze:", JSON.stringify(batch, null, 2));
 
-      // Usar POST con upsert (crea si no existe, actualiza si existe)
-      const resp = await axios.post(url, { items: batch }, {
+      const url = `${BRAZE_REST_ENDPOINT.replace(/\/$/, '')}/catalogs/${encodeURIComponent(CATALOG_NAME)}/items`;
+      
+      const resp = await axios.put(url, { items: batch }, {
         headers: {
           'Authorization': `Bearer ${BRAZE_API_KEY}`,
           'Content-Type': 'application/json'
         }
       });
 
-      console.log('Braze response', resp.status);
+      console.log('Respuesta Braze:', resp.status, resp.data);
     }
 
     return res.json({ message: 'ok', batches: batches.length });
